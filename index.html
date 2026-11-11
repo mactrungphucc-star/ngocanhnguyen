@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Định Lượng Rủi Ro Cảng Biển</title>
+    <!-- Tailwind CSS cho Giao diện -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js cho Biểu đồ -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); border-radius: 0.75rem; }
+        .input-group { margin-bottom: 1rem; }
+        .input-group label { display: block; font-size: 0.875rem; font-weight: 500; color: #374151; margin-bottom: 0.25rem; }
+        .input-group input { width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 0.375rem; outline: none; transition: border-color 0.2s; }
+        .input-group input:focus { border-color: #3b82f6; ring: 2px; }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-gray-800">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="mb-6 flex justify-between items-end">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-800">Quản Trị Rủi Ro Cảng Biển (Monte Carlo)</h1>
+                <p class="text-slate-500 mt-1">Đánh giá sức chịu đựng thanh khoản và Tối ưu hóa cấu trúc vốn</p>
+            </div>
+            <div class="hidden md:block">
+                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-blue-400">Phiên bản Web Nâng cao</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Cột bên trái: Tham số đầu vào -->
+            <div class="lg:col-span-4 glass-panel p-6">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Tham Số Vĩ Mô & Vi Mô</h2>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="input-group col-span-2">
+                        <label>Tổng Nợ (Tỷ VNĐ) [D]</label>
+                        <input type="number" id="inp-D" value="2000">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Lãi suất TB (%)</label>
+                        <input type="number" step="0.1" id="inp-muKd" value="8.0">
+                    </div>
+                    <div class="input-group">
+                        <label>Độ lệch LS (%)</label>
+                        <input type="number" step="0.1" id="inp-sigKd" value="1.5">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Sản lượng TB [Q]</label>
+                        <input type="number" id="inp-muQ" value="500000">
+                    </div>
+                    <div class="input-group">
+                        <label>Độ lệch SL [Q]</label>
+                        <input type="number" id="inp-sigQ" value="75000">
+                    </div>
+
+                    <div class="input-group col-span-2">
+                        <label>Hệ số tương quan (Sản lượng & Lãi suất) [ρ]</label>
+                        <input type="number" step="0.01" id="inp-rho" value="-0.3">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Đơn giá [P]</label>
+                        <input type="number" step="0.0001" id="inp-P" value="0.001">
+                    </div>
+                    <div class="input-group">
+                        <label>CP biến đổi [Vc]</label>
+                        <input type="number" step="0.0001" id="inp-Vc" value="0.0004">
+                    </div>
+
+                    <div class="input-group col-span-2">
+                        <label>CP cố định (Tỷ VNĐ) [Fc]</label>
+                        <input type="number" id="inp-Fc" value="100">
+                    </div>
+                </div>
+
+                <div class="mt-6 space-y-3">
+                    <button onclick="runWebSimulation()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                        ▶ THỰC THI MONTE CARLO
+                    </button>
+                    <button onclick="runOptimization()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                        ★ TÌM MỨC NỢ TỐI ĐA (Tối ưu hóa)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cột bên phải: Kết quả và Đồ thị -->
+            <div class="lg:col-span-8 flex flex-col gap-6">
+                
+                <!-- Thẻ Tóm tắt Kết quả (KPIs) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="glass-panel p-4 border-l-4 border-red-500">
+                        <p class="text-sm text-gray-500 font-semibold">Xác suất Vỡ nợ (PD)</p>
+                        <p class="text-3xl font-bold mt-1" id="res-PD">-- %</p>
+                        <p class="text-xs text-gray-400 mt-1">Kịch bản ICR < 1</p>
+                    </div>
+                    <div class="glass-panel p-4 border-l-4 border-blue-500">
+                        <p class="text-sm text-gray-500 font-semibold">ICRaR (Độ tin cậy 95%)</p>
+                        <p class="text-3xl font-bold mt-1" id="res-VaR">--</p>
+                        <p class="text-xs text-gray-400 mt-1">Giới hạn sức chịu đựng</p>
+                    </div>
+                    <div class="glass-panel p-4 border-l-4 border-emerald-500">
+                        <p class="text-sm text-gray-500 font-semibold">Độ nhạy (Sản lượng / LS)</p>
+                        <p class="text-2xl font-bold mt-1" id="res-Sens">-- / --</p>
+                        <p class="text-xs text-gray-400 mt-1">Hệ số tương quan Pearson</p>
+                    </div>
+                </div>
+
+                <!-- Khung Tối ưu hóa -->
+                <div class="glass-panel p-4 bg-emerald-50" id="opt-panel" style="display: none;">
+                    <h3 class="text-emerald-800 font-bold">💡 Khuyến nghị Cấu trúc vốn (Mức an toàn PD < 5%)</h3>
+                    <p class="text-emerald-700 mt-1" id="opt-result">Đang tính toán...</p>
+                </div>
+
+                <!-- Đồ thị Histogram -->
+                <div class="glass-panel p-6 flex-grow">
+                    <h2 class="text-lg font-semibold mb-4 text-center">Phân phối Mật độ Xác suất của Hệ số Thanh toán (ICR)</h2>
+                    <div class="relative h-64 md:h-80 w-full">
+                        <canvas id="icrChart"></canvas>
+                    </div>
+                    <div class="text-center text-sm text-gray-500 mt-4 flex justify-center space-x-4">
+                        <span class="flex items-center"><span class="w-3 h-3 bg-red-500 inline-block mr-1 rounded-full"></span> Vùng Nguy hiểm (ICR < 1)</span>
+                        <span class="flex items-center"><span class="w-3 h-3 bg-blue-500 inline-block mr-1 rounded-full"></span> Vùng An toàn (ICR >= 1)</span>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <!-- CODE JAVASCRIPT: Thuật toán lõi mô phỏng Monte Carlo -->
+    <script>
+        let myChart = null;
+
+        // 1. Hàm tạo số ngẫu nhiên phân phối chuẩn N(0,1) bằng Box-Muller Transform
+        function randomNormal() {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        // 2. Hàm tính tương quan Pearson
+        function calcPearson(x, y) {
+            let n = x.length;
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            for(let i = 0; i < n; i++) {
+                sumX += x[i]; sumY += y[i];
+                sumXY += x[i] * y[i];
+                sumX2 += x[i] * x[i]; sumY2 += y[i] * y[i];
+            }
+            let num = (n * sumXY) - (sumX * sumY);
+            let den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            return den === 0 ? 0 : num / den;
+        }
+
+        // 3. Hàm cốt lõi: Mô phỏng Monte Carlo
+        function runModel(D, mu_Kd, sig_Kd, mu_Q, sig_Q, P, Vc, Fc, rho, N) {
+            let ICR_sim = new Float64Array(N);
+            let Kd_sim = new Float64Array(N);
+            let Q_sim = new Float64Array(N);
+
+            // Phân rã Cholesky cho ma trận 2x2
+            let L11 = 1.0;
+            let L12 = 0.0;
+            let L21 = rho;
+            let L22 = Math.sqrt(1.0 - rho*rho);
+
+            let countDistress = 0;
+
+            for(let i = 0; i < N; i++) {
+                // Biến ngẫu nhiên độc lập
+                let Z1 = randomNormal();
+                let Z2 = randomNormal();
+
+                // Tạo tương quan
+                let X1 = L11 * Z1 + L12 * Z2;
+                let X2 = L21 * Z1 + L22 * Z2;
+
+                // Ánh xạ sang Lãi suất và Sản lượng
+                let Kd = mu_Kd + sig_Kd * X1;
+                if(Kd < 0.01) Kd = 0.01; // Giới hạn lãi suất
+                
+                let Q = mu_Q + sig_Q * X2;
+                if(Q < 0) Q = 0; // Giới hạn sản lượng
+
+                // Phương trình tài chính
+                let EBIT = Q * (P - Vc) - Fc;
+                let Interest = D * Kd;
+                let ICR = EBIT / Interest;
+
+                Kd_sim[i] = Kd;
+                Q_sim[i] = Q;
+                ICR_sim[i] = ICR;
+
+                if (ICR < 1.0) countDistress++;
+            }
+
+            // Đo lường rủi ro
+            let PD = (countDistress / N) * 100;
+            
+            // Tính VaR (Phân vị thứ 5)
+            let sortedICR = Float64Array.from(ICR_sim).sort();
+            let index5th = Math.floor(0.05 * N);
+            let VaR = sortedICR[index5th];
+
+            // Độ nhạy
+            let sensQ = calcPearson(Q_sim, ICR_sim);
+            let sensKd = calcPearson(Kd_sim, ICR_sim);
+
+            return { PD, VaR, sensQ, sensKd, ICR_sim };
+        }
+
+        // 4. Lấy dữ liệu từ Giao diện
+        function getInputs() {
+            return {
+                D: parseFloat(document.getElementById('inp-D').value),
+                mu_Kd: parseFloat(document.getElementById('inp-muKd').value) / 100,
+                sig_Kd: parseFloat(document.getElementById('inp-sigKd').value) / 100,
+                mu_Q: parseFloat(document.getElementById('inp-muQ').value),
+                sig_Q: parseFloat(document.getElementById('inp-sigQ').value),
+                rho: parseFloat(document.getElementById('inp-rho').value),
+                P: parseFloat(document.getElementById('inp-P').value),
+                Vc: parseFloat(document.getElementById('inp-Vc').value),
+                Fc: parseFloat(document.getElementById('inp-Fc').value),
+                N: 10000
+            };
+        }
+
+        // 5. Hàm thực thi khi bấm nút "Mô phỏng"
+        function runWebSimulation() {
+            let p = getInputs();
+            let res = runModel(p.D, p.mu_Kd, p.sig_Kd, p.mu_Q, p.sig_Q, p.P, p.Vc, p.Fc, p.rho, p.N);
+
+            // Hiển thị kết quả Text
+            let pdElement = document.getElementById('res-PD');
+            pdElement.innerText = res.PD.toFixed(2) + " %";
+            pdElement.className = res.PD > 10 ? "text-3xl font-bold mt-1 text-red-600" : "text-3xl font-bold mt-1 text-emerald-600";
+            
+            document.getElementById('res-VaR').innerText = res.VaR.toFixed(2);
+            document.getElementById('res-Sens').innerText = `${res.sensQ.toFixed(2)} / ${res.sensKd.toFixed(2)}`;
+
+            document.getElementById('opt-panel').style.display = 'none'; // Ẩn panel tối ưu hóa
+
+            // Vẽ đồ thị
+            drawChart(res.ICR_sim);
+        }
+
+        // 6. Hàm thuật toán Tối ưu hóa (Binary Search)
+        function runOptimization() {
+            let p = getInputs();
+            let target_PD = 5.0; // Mục tiêu PD <= 5%
+            
+            let min_Debt = 0;
+            let max_Debt = p.D * 5; // Giả định tối đa gấp 5 lần hiện tại
+            let best_Debt = p.D;
+
+            document.getElementById('opt-panel').style.display = 'block';
+            document.getElementById('opt-result').innerText = "Đang chạy hàng chục nghìn kịch bản để tìm giới hạn...";
+
+            // Dùng timeout để UI kịp render chữ "Đang chạy..."
+            setTimeout(() => {
+                for (let iter = 0; iter < 15; iter++) {
+                    let test_Debt = (min_Debt + max_Debt) / 2;
+                    let res = runModel(test_Debt, p.mu_Kd, p.sig_Kd, p.mu_Q, p.sig_Q, p.P, p.Vc, p.Fc, p.rho, p.N);
+                    
+                    if (res.PD > target_PD) {
+                        max_Debt = test_Debt; // Giảm nợ
+                    } else {
+                        min_Debt = test_Debt; // Có thể vay thêm
+                        best_Debt = test_Debt;
+                    }
+                }
+                
+                document.getElementById('opt-result').innerHTML = `Để đảm bảo Xác suất vỡ nợ thanh khoản <b>< 5%</b>, Tổng Nợ Vay tối đa doanh nghiệp nên duy trì là: <b>${best_Debt.toFixed(0)} Tỷ VNĐ</b>.`;
+                
+                // Cập nhật lại biểu đồ với mức nợ tối ưu
+                p.D = best_Debt;
+                let optRes = runModel(p.D, p.mu_Kd, p.sig_Kd, p.mu_Q, p.sig_Q, p.P, p.Vc, p.Fc, p.rho, p.N);
+                drawChart(optRes.ICR_sim);
+                
+                // Update KPI
+                document.getElementById('res-PD').innerText = optRes.PD.toFixed(2) + " %";
+                document.getElementById('res-VaR').innerText = optRes.VaR.toFixed(2);
+                document.getElementById('inp-D').value = best_Debt.toFixed(0); // Update input field
+            }, 100);
+        }
+
+        // 7. Hàm Vẽ biểu đồ Histogram bằng Chart.js
+        function drawChart(dataArray) {
+            // Loại bỏ các giá trị outliers (quá lớn) để biểu đồ đẹp hơn
+            let sorted = Float64Array.from(dataArray).sort();
+            let q1 = sorted[Math.floor(sorted.length * 0.05)];
+            let q95 = sorted[Math.floor(sorted.length * 0.95)];
+            
+            // Lọc data
+            let filteredData = [];
+            for(let i=0; i<dataArray.length; i++){
+                if(dataArray[i] >= q1 && dataArray[i] <= q95 * 1.5) {
+                    filteredData.push(dataArray[i]);
+                }
+            }
+
+            // Chia Bin (Khoảng)
+            let numBins = 50;
+            let min = Math.min(...filteredData);
+            let max = Math.max(...filteredData);
+            let binWidth = (max - min) / numBins;
+            
+            let bins = new Array(numBins).fill(0);
+            for(let val of filteredData) {
+                let index = Math.floor((val - min) / binWidth);
+                if (index >= numBins) index = numBins - 1;
+                bins[index]++;
+            }
+
+            let labels = [];
+            let bgColors = [];
+            for(let i = 0; i < numBins; i++) {
+                let binValue = min + (i + 0.5) * binWidth;
+                labels.push(binValue.toFixed(2));
+                // Tô màu đỏ nếu ICR < 1
+                if (binValue < 1.0) {
+                    bgColors.push('rgba(239, 68, 68, 0.8)'); // Red Tailwind
+                } else {
+                    bgColors.push('rgba(59, 130, 246, 0.8)'); // Blue Tailwind
+                }
+            }
+
+            if (myChart) myChart.destroy();
+
+            let ctx = document.getElementById('icrChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Số Kịch bản (Tần suất)',
+                        data: bins,
+                        backgroundColor: bgColors,
+                        borderWidth: 0,
+                        barPercentage: 1.0,
+                        categoryPercentage: 1.0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) { return 'Hệ số ICR: ~' + context[0].label; }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Hệ số Thanh toán Lãi vay (ICR)' },
+                            ticks: { maxTicksLimit: 10 }
+                        },
+                        y: {
+                            title: { display: true, text: 'Tần suất xuất hiện' },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Chạy lần đầu khi load trang
+        window.onload = runWebSimulation;
+    </script>
+</body>
+</html>
